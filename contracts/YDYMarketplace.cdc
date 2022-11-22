@@ -26,6 +26,7 @@ pub contract YDYMarketplace {
     pub fun getIDs(): [UInt64]
     pub fun getPrice(id: UInt64): UFix64
     pub fun purchase(id: UInt64, recipientCollection: &YDYHeartNFT.Collection{NonFungibleToken.CollectionPublic}, payment: @FlowToken.Vault)
+    pub fun getYDYHeartNFTForSale(id: UInt64): &YDYHeartNFT.NFT?
   }
 
   pub resource SaleCollection: SaleCollectionPublic {
@@ -101,7 +102,7 @@ pub contract YDYMarketplace {
     var saleData: [YDYHeartNFTSaleData] = []
     let account = getAccount(address)
 
-    if let saleCollection = account.getCapability(self.CollectionPublicPath).borrow<&YDYMarketplace.SaleCollectionPublic>() {
+    if let saleCollection = account.getCapability(self.CollectionPublicPath).borrow<&SaleCollection{YDYMarketplace.SaleCollectionPublic}>() {
       for id in saleCollection.getIDs() {
         let price = saleCollection.getPrice(id: id)
         let nftRef = saleCollection.getYDYHeartNFTForSale(id: id)
