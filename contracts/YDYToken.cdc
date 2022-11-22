@@ -11,6 +11,7 @@ pub contract YDYToken: FungibleToken {
     pub let AdminStoragePath: StoragePath
 
     // Events
+    pub event TokensInitialized(initialSupply: UFix64)
     pub event TokensWithdrawn(amount: UFix64, from: Address?)
     pub event TokensDeposited(amount: UFix64, to: Address?)
     pub event TokensMinted(amount: UFix64)
