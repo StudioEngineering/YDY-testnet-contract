@@ -97,7 +97,7 @@ pub contract YDYMarketplace {
     return <- create SaleCollection(_YDYHeartNFTCollection: YDYHeartNFTCollection, _FlowTokenVault: FlowTokenVault)
   }
 
-  pub fun getUserYDYHeartNFTSales(address: Address, id: UInt64): [YDYHeartNFTSaleData] {
+  pub fun getUserYDYHeartNFTSales(address: Address): [YDYHeartNFTSaleData] {
     var saleData: [YDYHeartNFTSaleData] = []
     let account = getAccount(address)
 
