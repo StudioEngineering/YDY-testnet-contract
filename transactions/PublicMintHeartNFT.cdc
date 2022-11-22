@@ -2,35 +2,31 @@ import NonFungibleToken from "../contracts/NonFungibleToken.cdc"
 import YDYHeartNFT from "../contracts/YDYHeartNFT.cdc"
 import FungibleToken from "../contracts/FungibleToken.cdc"
 import FlowToken from "../contracts/FlowToken.cdc"
-transaction(price: UFix64) {
-        let FlowTokenVault: &FlowToken.Vault
-        let signerCapability: Capability<&YDYHeartNFT.Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>
-        let ownerCollectionRef: &AnyResource{YDYHeartNFT.YDYHeartNFTCollectionPublic}
 
-        prepare(signer: AuthAccount) {
-            if signer.borrow<&YDYHeartNFT.Collection>(from: YDYHeartNFT.CollectionStoragePath) == nil {
-                  let collection <- YDYHeartNFT.createEmptyCollection()
-                  
-                  signer.save(<-collection, to: YDYHeartNFT.CollectionStoragePath)
-      
-                  signer.link<&YDYHeartNFT.Collection{NonFungibleToken.CollectionPublic, YDYHeartNFT.YDYHeartNFTCollectionPublic, MetadataViews.ResolverCollection}>(YDYHeartNFT.CollectionPublicPath, target: YDYHeartNFT.CollectionStoragePath)
-            }
+transaction(price: UFix64, quantity: quantity, receiver: Address) {
+    let FlowTokenVault: &FlowToken.Vault
+    let ReceiverCapability: Capability<&YDYHeartNFT.Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>
+    let Admin: &YDYHeartNFT.Admin
 
-            self.FlowTokenVault = signer.borrow<&FlowToken.Vault>(from: /storage/flowTokenVault)!
-    
-            let owner = getAccount() // inseert account address here
-            self.ownerCollectionRef = owner.getCapability(YDYHeartNFT.CollectionPublicPath)
-                        .borrow<&AnyResource{YDYHeartNFT.YDYHeartNFTCollectionPublic}>()
-                        ?? panic("Can't get the User's collection.")
+    prepare(signer: AuthAccount) {
+        self.Admin = signer.borrow<&YDYHeartNFT.Admin>(from: YDYHeartNFT.AdminStoragePath)
+                        ?? panic("Could not borrow a reference to the Admin")
+        
+        let receiverAccount = getAccount(receiver)
 
-            self.signerCapability = signer.getCapability<&YDYHeartNFT.Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>(YDYHeartNFT.CollectionPublicPath)
-
+        if receiverAccount.borrow<&YDYHeartNFT.Collection>(from: YDYHeartNFT.CollectionStoragePath) == nil {
+            let collection <- YDYHeartNFT.createEmptyCollection()  
+            receiverAccount.save(<-collection, to: YDYHeartNFT.CollectionStoragePath)
+            receiverAccount.link<&YDYHeartNFT.Collection{NonFungibleToken.CollectionPublic, YDYHeartNFT.YDYHeartNFTCollectionPublic, MetadataViews.ResolverCollection}>(YDYHeartNFT.CollectionPublicPath, target: YDYHeartNFT.CollectionStoragePath)
         }
 
-            execute {
+        self.FlowTokenVault = receiverAccount.borrow<&FlowToken.Vault>(from: /storage/flowTokenVault)!
 
-            let payment <- self.FlowTokenVault.withdraw(amount: price) as! @FlowToken.Vault
+        self.ReceiverCapability = receiverAccount.getCapability<&YDYHeartNFT.Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>(YDYHeartNFT.CollectionPublicPath)
+    }
 
-            self.ownerCollectionRef.buy(collectionCapability: self.signerCapability, payment: <- payment);  
-            }
-        }
+    execute {
+        let payment <- self.FlowTokenVault.withdraw(amount: price) as! @FlowToken.Vault
+        self.Admin.buy(collectionCapability: self.ReceiverCapability, payment: <- payment, quantity: quantity);  
+    }
+}

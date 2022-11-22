@@ -16,7 +16,7 @@ pub contract YDYHeartNFT: NonFungibleToken {
 
     pub let CollectionStoragePath: StoragePath
     pub let CollectionPublicPath: PublicPath
-    pub let MinterStoragePath: StoragePath
+    pub let AdminStoragePath: StoragePath
 
     pub enum Rarity: UInt8 {
         pub case common
@@ -88,8 +88,6 @@ pub contract YDYHeartNFT: NonFungibleToken {
 
         pub let rarity: Rarity
 
-        pub let royalties: [MetadataViews.Royalty]
-
         init(
             thumbnailCID: String,
             background: String,
@@ -126,8 +124,6 @@ pub contract YDYHeartNFT: NonFungibleToken {
             self.lastLuckBoost = getCurrentBlock().timestamp
 
             self.rarity = rarity
-            
-            self.royalties = [MetadataViews.Royalty(recepient: getAccount(YDYHeartNFT.account.address).getCapability<&{FungibleToken.Receiver}>(/public/flowTokenReceiver), cut: 0.075, description: "This is the royalty receiver for YDY Heart NFTs")]
         }
 
         access(contract) fun levelUp() {
@@ -136,13 +132,17 @@ pub contract YDYHeartNFT: NonFungibleToken {
         }
 
         access(contract) fun repair(_ points: UInt64) {
-            pre {
-                self.stamina + points <= 100 : "Number of points exceeds stamina repair limit of 100"
+            if (self.stamina + points > 100) {
+                self.stamina = 100
+            } else {
+                self.stamina = self.stamina + points
             }
-            self.stamina = self.stamina + points
         }
 
         access(contract) fun reduceStamina(_ points: UInt64) {
+            pre {
+                self.stamina > points: "Not enough stamina"
+            }
             self.stamina = self.stamina - points
         }
 
@@ -166,6 +166,7 @@ pub contract YDYHeartNFT: NonFungibleToken {
                 Type<MetadataViews.Display>(),
                 Type<MetadataViews.NFTCollectionData>(),
                 Type<MetadataViews.NFTCollectionDisplay>(),
+                Type<MetadataViews.ExternalURL>(),
                 Type<MetadataViews.Royalties>()
             ]
         }
@@ -210,10 +211,14 @@ pub contract YDYHeartNFT: NonFungibleToken {
                             "twitter": MetadataViews.ExternalURL("https://twitter.com/ydylife")
                         }
                     )
+                case Type<MetadataViews.ExternalURL>():
+                    return MetadataViews.ExternalURL(
+                        "https://www.ydylife.com/"
+                    )
                 case Type<MetadataViews.Royalties>():
                     return MetadataViews.Royalties(
-                        self.royalties
-                    )
+                        [MetadataViews.Royalty(recepient: getAccount(YDYHeartNFT.account.address).getCapability<&{FungibleToken.Receiver}>(/public/flowTokenReceiver), cut: 0.075, description: "This is the royalty receiver for YDY Heart NFTs")]
+                    )  
             }
             return nil
         }
@@ -230,7 +235,6 @@ pub contract YDYHeartNFT: NonFungibleToken {
             }
         }
         pub fun borrowViewResolver(id: UInt64): &AnyResource{MetadataViews.Resolver}
-        pub fun buy(collectionCapability: Capability<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>,  payment: @FlowToken.Vault)
     }
 
     pub resource interface YDYHeartNFTCollectionPrivate {
@@ -238,15 +242,12 @@ pub contract YDYHeartNFT: NonFungibleToken {
     }
 
     pub resource Collection: YDYHeartNFTCollectionPublic, YDYHeartNFTCollectionPrivate, NonFungibleToken.Provider, NonFungibleToken.Receiver, NonFungibleToken.CollectionPublic, MetadataViews.ResolverCollection {
-        // dictionary of NFT conforming tokens
-        // NFT is a resource type with an `UInt64` ID field
         pub var ownedNFTs: @{UInt64: NonFungibleToken.NFT}
 
         init () {
             self.ownedNFTs <- {}
         }
 
-        // withdraw removes an NFT from the collection and moves it to the caller
         pub fun withdraw(withdrawID: UInt64): @NonFungibleToken.NFT {
             let token <- self.ownedNFTs.remove(key: withdrawID) ?? panic("missing NFT")
 
@@ -258,12 +259,9 @@ pub contract YDYHeartNFT: NonFungibleToken {
         pub fun deposit(token: @NonFungibleToken.NFT) {
             let token <- token as! @YDYHeartNFT.NFT
             let id: UInt64 = token.id
-
-            let oldToken <- self.ownedNFTs[id] <- token
-
             emit Deposit(id: id, to: self.owner?.address)
 
-            destroy oldToken
+            self.ownedNFTs[id] <-! token
         }
 
         pub fun getIDs(): [UInt64] {
@@ -276,7 +274,7 @@ pub contract YDYHeartNFT: NonFungibleToken {
  
         pub fun borrowYDYHeartNFT(id: UInt64): &YDYHeartNFT.NFT? {
             if self.ownedNFTs[id] != nil {
-                let ref = (&self.ownedNFTs[id] as auth &NonFungibleToken.NFT?)!
+                let ref = (&self.ownedNFTs[id] as auth &NonFungibleToken.NFT?)
                 return ref as! &YDYHeartNFT.NFT
             }
 
@@ -289,41 +287,6 @@ pub contract YDYHeartNFT: NonFungibleToken {
             return ydyHeartNFT as &AnyResource{MetadataViews.Resolver}
         }
 
-        pub fun buy(collectionCapability: Capability<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>, payment: @FlowToken.Vault) {
-            pre {
-				self.owner!.address == YDYHeartNFT.account.address : "You can only buy the NFT directly from the YDYHeartNFT account"
-                payment.balance == YDYHeartNFT.price: "Payment does not match the price."
-			}
-            
-            // deposit payment in ydy wallet
-            let ydyWallet = YDYHeartNFT.account.getCapability(/public/flowTokenReceiver)
-									.borrow<&FlowToken.Vault{FungibleToken.Receiver}>()!
-		    ydyWallet.deposit(from: <- payment)
-
-            // get random NFT from ydy wallet
-            let ydyCollection = YDYHeartNFT.account.getCapability(YDYHeartNFT.CollectionPublicPath)
-                                    .borrow<&AnyResource{YDYHeartNFT.YDYHeartNFTCollectionPublic}>()
-                                    ?? panic("Can't get the YDY's collection.")
-            let availableNFTs = ydyCollection.getIDs()
-            if (availableNFTs.length > 0) {
-                let randomInt = unsafeRandom() % UInt64(availableNFTs.length)
-                let id = availableNFTs[randomInt]
-
-                // establish the receiver for redeeming YDYHeartNFT
-                let receiver = collectionCapability.borrow() ?? panic("Cannot borrow")
-            
-                // withdraw the NFT from ydy wallet
-                let token <- self.withdraw(withdrawID: id) as! @YDYHeartNFT.NFT
-
-                emit Bought(id: id, to: receiver.owner?.address)
-
-                // deposit NFT to receiver's wallet
-                receiver.deposit(token: <- token)
-            } else {
-                panic("No NFTs available.")
-            }
-        }
-
         destroy() {
             destroy self.ownedNFTs
         }
@@ -333,17 +296,43 @@ pub contract YDYHeartNFT: NonFungibleToken {
         return <- create Collection()
     }
 
-    pub fun getTotalSupply(): UInt64 {
-        return self.totalSupply
-    }
-
-    pub resource NFTMinter {
+    pub resource Admin {
 
         pub fun mintNFT(
             thumbnailCID: String, background: String, heart: String, mouth: String, eyes: String, pants: String, rarity: Rarity
         ) {
-            let accountOwnerCollection = YDYHeartNFT.account.borrow<&AnyResource{NonFungibleToken.CollectionPublic}>(from: YDYHeartNFT.CollectionStoragePath)!
+            let accountOwnerCollection = YDYHeartNFT.account.borrow<&Collection{NonFungibleToken.CollectionPublic}>(from: YDYHeartNFT.CollectionStoragePath)!
             accountOwnerCollection.deposit(token: <-create YDYHeartNFT.NFT(thumbnailCID: thumbnailCID, background: background, heart: heart, mouth: mouth, eyes: eyes, pants: pants, rarity: rarity))
+        }
+
+        pub fun buy(collectionCapability: Capability<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>, payment: @FlowToken.Vault, quantity: UInt64) {
+            pre {
+                payment.balance == YDYHeartNFT.price * quantity: "Payment does not match the price."
+			}
+            
+            let ydyWallet = YDYHeartNFT.account.getCapability(/public/flowTokenReceiver)
+									.borrow<&FlowToken.Vault{FungibleToken.Receiver}>()!
+		    ydyWallet.deposit(from: <- payment)
+
+            let ydyCollection = YDYHeartNFT.account.getCapability(YDYHeartNFT.CollectionPublicPath)
+                                    .borrow<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>()
+                                    ?? panic("Can't get the YDY's collection.")
+            let availableNFTs = ydyCollection.getIDs()
+            
+            if (availableNFTs.length > 0) {
+                let randomInt = unsafeRandom() % UInt64(availableNFTs.length)
+                let id = availableNFTs[randomInt]
+
+                let receiver = collectionCapability.borrow() ?? panic("Cannot borrow")
+            
+                let token <- self.withdraw(withdrawID: id) as! @YDYHeartNFT.NFT
+
+                emit Bought(id: id, to: receiver.owner?.address)
+
+                receiver.deposit(token: <- token)
+            } else {
+                panic("No NFTs available.")
+            }
         }
 
         pub fun levelUp(id: UInt64, recipientCollectionCapability: Capability<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>): &YDYHeartNFT.NFT? {
@@ -408,6 +397,10 @@ pub contract YDYHeartNFT: NonFungibleToken {
             nft.boostLuck(points)
             return nft
         }
+
+        pub fun changePrice(price: UFix64) {
+            YDYHeartNFT.price = price
+        }
     }
 
     init() {
@@ -416,10 +409,10 @@ pub contract YDYHeartNFT: NonFungibleToken {
 
         self.CollectionStoragePath = /storage/ydyHeartNFTCollection
         self.CollectionPublicPath = /public/ydyHeartNFTCollection
-        self.MinterStoragePath = /storage/ydyHeartNFTMinter
+        self.AdminStoragePath = /storage/ydyHeartAdmin
 
-        let minter <- create NFTMinter()
-        self.account.save(<-minter, to: self.MinterStoragePath)
+        let admin <- create Admin()
+        self.account.save(<-admin, to: self.AdminStoragePath)
 
         emit ContractInitialized()
     }

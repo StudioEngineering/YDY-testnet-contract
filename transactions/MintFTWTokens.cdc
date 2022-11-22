@@ -22,6 +22,6 @@ transaction(receiverAccount: Address, amount: UFix64) {
   }
 
   execute {
-        log("deposited tokens into receiver account")
+  
   }
 }

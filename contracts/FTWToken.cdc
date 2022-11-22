@@ -11,19 +11,17 @@ pub contract FTWToken: FungibleToken {
     pub let AdminStoragePath: StoragePath
 
     // Events
-    pub event TokensInitialized(initialSupply: UFix64)
     pub event TokensWithdrawn(amount: UFix64, from: Address?)
     pub event TokensDeposited(amount: UFix64, to: Address?)
     pub event TokensMinted(amount: UFix64)
     pub event TokensBurned(amount: UFix64)
     pub event MinterCreated()
-    pub event BurnerCreated()
 
     pub resource Vault: FungibleToken.Provider, FungibleToken.Receiver, FungibleToken.Balance {
         pub var balance: UFix64
 
         pub fun deposit(from: @FungibleToken.Vault) {
-            let vault <- from as! @FTWToken.Vault // making sure FTWToken is the one being passed in
+            let vault <- from as! @FTWToken.Vault
             emit TokensDeposited(amount: vault.balance, to: self.owner?.address)
             self.balance = self.balance + vault.balance
 
@@ -41,10 +39,11 @@ pub contract FTWToken: FungibleToken {
             self.balance = balance
         }
         
-        // when tokens get burned
+        // When tokens get burned
         destroy() {
             if self.balance > 0.0 {
                 FTWToken.totalSupply = FTWToken.totalSupply - self.balance
+                emit TokensBurned(amount: amount)
             }
         }
     }
@@ -53,28 +52,17 @@ pub contract FTWToken: FungibleToken {
         return <- create Vault(balance: 0.0)
     }
 
-    access(account) fun burnTokens(from: @FungibleToken.Vault) {
-            let vault <- from as! @FTWToken.Vault // making sure FTWToken is the one being passed in
-            let amount = vault.balance
-            destroy vault
-            emit TokensBurned(amount: amount)
-        }
-
     pub resource Administrator {
         pub fun createNewMinter(): @Minter {
             emit MinterCreated()
             return <-create Minter()
-        }
-
-        pub fun createNewBurner(): @Burner {
-            emit BurnerCreated()
-            return <-create Burner()
         }
     }
 
     pub resource Minter {
         pub fun mintToken(amount: UFix64): @FungibleToken.Vault {
             FTWToken.totalSupply = FTWToken.totalSupply + amount
+            emit TokensMinted(amount: amount)
             
             return <- create Vault(balance: amount)
         }
@@ -83,21 +71,6 @@ pub contract FTWToken: FungibleToken {
 
         }
     }
-
-    pub resource Burner {
-        pub fun burnTokens(from: @FungibleToken.Vault) {
-            let vault <- from as! @FTWToken.Vault // making sure FTWToken is the one being passed in
-            let amount = vault.balance
-            destroy vault
-            emit TokensBurned(amount: amount)
-        }
-
-        init() {
-
-        }
-    }
-
-    
 
     init() {
         self.totalSupply = 0.0
