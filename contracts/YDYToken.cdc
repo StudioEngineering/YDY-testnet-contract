@@ -43,7 +43,7 @@ pub contract YDYToken: FungibleToken {
         destroy() {
             if self.balance > 0.0 {
                 YDYToken.totalSupply = YDYToken.totalSupply - self.balance
-                emit TokensBurned(amount: amount)
+                emit TokensBurned(amount: self.balance)
             }
         }
     }

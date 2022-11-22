@@ -43,7 +43,7 @@ pub contract FTWToken: FungibleToken {
         destroy() {
             if self.balance > 0.0 {
                 FTWToken.totalSupply = FTWToken.totalSupply - self.balance
-                emit TokensBurned(amount: amount)
+                emit TokensBurned(amount: self.balance)
             }
         }
     }
