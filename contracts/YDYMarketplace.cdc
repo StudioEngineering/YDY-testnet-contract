@@ -2,6 +2,7 @@ import YDYHeartNFT from "YDYHeartNFT.cdc"
 import NonFungibleToken from "NonFungibleToken.cdc"
 import FlowToken from "FlowToken.cdc"
 import FungibleToken from "FungibleToken.cdc"
+import MetadataViews from "MetadataViews.cdc"
 
 pub contract YDYMarketplace {
 
@@ -57,8 +58,11 @@ pub contract YDYMarketplace {
       
       let ydyWallet = YDYMarketplace.account.getCapability(/public/flowTokenReceiver)
 									.borrow<&FlowToken.Vault{FungibleToken.Receiver}>()!
-      let nftRoyalty = self.YDYHeartNFTCollection.borrow()!.borrowYDYHeartNFT(id: id)?.royalties![0].cut
-      let ydyAmount = payment.balance * nftRoyalty
+
+      let resolver = self.YDYHeartNFTCollection.borrow()!.borrowViewResolver(id: id)
+      let royaltyView: MetadataViews.Royalty = MetadataViews.getRoyalties(resolver)?.getRoyalties()![0]!
+      
+      let ydyAmount = payment.balance * royaltyView.cut
       let tempYDYWallet <- payment.withdraw(amount: ydyAmount)
 		  ydyWallet.deposit(from: <- tempYDYWallet)
 
