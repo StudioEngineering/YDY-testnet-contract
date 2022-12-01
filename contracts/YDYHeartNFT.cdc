@@ -86,7 +86,7 @@ pub contract YDYHeartNFT: NonFungibleToken {
         pub var luck: UInt64
         pub var lastLuckBoost: UFix64
 
-        pub let rarity: Rarity
+        pub let rarity: String
 
         init(
             thumbnailCID: String,
@@ -123,7 +123,7 @@ pub contract YDYHeartNFT: NonFungibleToken {
             self.luck = YDYHeartNFT.calculateAttribute(rarity)
             self.lastLuckBoost = getCurrentBlock().timestamp
 
-            self.rarity = rarity
+            self.rarity = YDYHeartNFT.rarityToString(rarity)
         }
 
         access(contract) fun levelUp() {
@@ -179,7 +179,7 @@ pub contract YDYHeartNFT: NonFungibleToken {
                         description: self.description,
                         thumbnail: MetadataViews.IPFSFile(
                             cid: self.thumbnailCID,
-                            path: "/".concat(self.id.toString()).concat(".png")
+                            path: "/".concat(self.id.toString()).concat(".webp")
                         )
                     )
                 case Type<MetadataViews.NFTCollectionData>():
@@ -275,7 +275,7 @@ pub contract YDYHeartNFT: NonFungibleToken {
         pub fun borrowYDYHeartNFT(id: UInt64): &YDYHeartNFT.NFT? {
             if self.ownedNFTs[id] != nil {
                 let ref = (&self.ownedNFTs[id] as auth &NonFungibleToken.NFT?)
-                return ref as! &YDYHeartNFT.NFT
+                return ref as! &YDYHeartNFT.NFT?
             }
 
             return nil
@@ -296,6 +296,36 @@ pub contract YDYHeartNFT: NonFungibleToken {
         return <- create Collection()
     }
 
+    pub fun buy(collectionCapability: Capability<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>, payment: @FlowToken.Vault, quantity: UInt64) {
+        pre {
+            payment.balance == YDYHeartNFT.price * UFix64(quantity): "Payment does not match the price."
+		}
+            
+        let ydyWallet = self.account.getCapability(/public/flowTokenReceiver)
+							.borrow<&FlowToken.Vault{FungibleToken.Receiver}>()!
+		ydyWallet.deposit(from: <- payment)
+
+        let ydyCollection = self.account.getCapability(YDYHeartNFT.CollectionPublicPath)
+                                .borrow<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic, YDYHeartNFT.YDYHeartNFTCollectionPrivate}>()
+                                ?? panic("Can't get the YDY's collection.")
+        let availableNFTs = ydyCollection.getIDs()
+        
+        if (availableNFTs.length > 0) {
+            let receiver = collectionCapability.borrow() ?? panic("Cannot borrow")
+
+            let randomInt = unsafeRandom() % UInt64(availableNFTs.length)
+            let id = availableNFTs[randomInt]
+            
+            let token <- ydyCollection.withdraw(withdrawID: id) as! @YDYHeartNFT.NFT
+
+            emit Bought(id: id, to: receiver.owner?.address)
+
+            receiver.deposit(token: <- token)
+        } else {
+            panic("No NFTs available.")
+        }
+    }
+
     pub resource Admin {
 
         pub fun mintNFT(
@@ -303,36 +333,6 @@ pub contract YDYHeartNFT: NonFungibleToken {
         ) {
             let accountOwnerCollection = YDYHeartNFT.account.borrow<&Collection{NonFungibleToken.CollectionPublic}>(from: YDYHeartNFT.CollectionStoragePath)!
             accountOwnerCollection.deposit(token: <-create YDYHeartNFT.NFT(thumbnailCID: thumbnailCID, background: background, heart: heart, mouth: mouth, eyes: eyes, pants: pants, rarity: rarity))
-        }
-
-        pub fun buy(collectionCapability: Capability<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>, payment: @FlowToken.Vault, quantity: UInt64) {
-            pre {
-                payment.balance == YDYHeartNFT.price * quantity: "Payment does not match the price."
-			}
-            
-            let ydyWallet = YDYHeartNFT.account.getCapability(/public/flowTokenReceiver)
-									.borrow<&FlowToken.Vault{FungibleToken.Receiver}>()!
-		    ydyWallet.deposit(from: <- payment)
-
-            let ydyCollection = YDYHeartNFT.account.getCapability(YDYHeartNFT.CollectionPublicPath)
-                                    .borrow<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>()
-                                    ?? panic("Can't get the YDY's collection.")
-            let availableNFTs = ydyCollection.getIDs()
-            
-            if (availableNFTs.length > 0) {
-                let randomInt = unsafeRandom() % UInt64(availableNFTs.length)
-                let id = availableNFTs[randomInt]
-
-                let receiver = collectionCapability.borrow() ?? panic("Cannot borrow")
-            
-                let token <- self.withdraw(withdrawID: id) as! @YDYHeartNFT.NFT
-
-                emit Bought(id: id, to: receiver.owner?.address)
-
-                receiver.deposit(token: <- token)
-            } else {
-                panic("No NFTs available.")
-            }
         }
 
         pub fun levelUp(id: UInt64, recipientCollectionCapability: Capability<&Collection{YDYHeartNFT.YDYHeartNFTCollectionPublic}>): &YDYHeartNFT.NFT? {
@@ -417,4 +417,3 @@ pub contract YDYHeartNFT: NonFungibleToken {
         emit ContractInitialized()
     }
 }
- 
